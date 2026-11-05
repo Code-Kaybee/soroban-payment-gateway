@@ -2,18 +2,19 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Stellar](https://img.shields.io/badge/Stellar-Soroban-blue)](https://stellar.org)
+[![CI](https://github.com/NexaStellar/soroban-payment-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/NexaStellar/soroban-payment-gateway/actions/workflows/ci.yml)
 
-A production-ready smart contract payment gateway built on Soroban (Stellar's smart contract platform) that enables secure multi-token payment processing with escrow, refunds, and merchant management.
+A small Soroban smart contract prototype for token payments, platform-fee distribution, merchant records, and buyer-funded escrow. It is an unaudited alpha and is not suitable for production funds.
 
 ## 🌟 Features
 
-- **Multi-Token Support**: Accept payments in any Stellar asset (XLM, USDC, custom tokens)
-- **Escrow System**: Built-in escrow functionality for secure transactions
-- **Merchant Management**: Register and manage multiple merchants
-- **Refund Mechanism**: Easy refund processing with dispute resolution
-- **Fee Management**: Configurable platform fees with automatic distribution
-- **Event Logging**: Comprehensive event emission for transaction tracking
-- **Access Control**: Role-based permissions for admin and merchant operations
+- **Token payments**: Transfer Soroban token-contract balances directly from a payer to a registered merchant and the admin fee recipient
+- **Escrow**: Hold tokens in the contract until the buyer releases early, anyone releases after the deadline, or the seller refunds the buyer
+- **Merchant registry**: Admin registration and per-merchant volume/count tracking
+- **Platform fee**: Admin-configurable fee in basis points, capped at 10,000 (100%)
+- **Events and records**: Emit lifecycle events and store payment and escrow details
+
+The contract currently has no dispute resolution, subscriptions, merchant update/deactivation API, or on-chain refund-request flow.
 
 ## 🏗️ Architecture
 
@@ -35,12 +36,18 @@ A production-ready smart contract payment gateway built on Soroban (Stellar's sm
 └─────────────────┘  └─────────────────┘
 ```
 
+## Status and limitations
+
+- **Status:** Alpha prototype; APIs and storage may change.
+- **Network:** Tests use Soroban's local test environment. No deployment or production-readiness claim is made.
+- **Security:** Not audited. Do not use with real funds.
+- **Assets:** The contract calls the Soroban token interface. It does not support arbitrary Stellar assets unless they are exposed through a compatible token contract.
+- **Trust:** The admin receives platform fees and can set the fee up to 100%. Escrow has no dispute process; before the deadline the buyer can release and the seller can refund.
+
 ## 📋 Prerequisites
 
 - [Rust](https://www.rust-lang.org/tools/install) (latest stable)
-- [Soroban CLI](https://soroban.stellar.org/docs/getting-started/setup) v20.0.0+
-- [Node.js](https://nodejs.org/) v18+ (for testing and SDK)
-- Stellar account with testnet XLM
+- `wasm32-unknown-unknown` target (only for Wasm builds)
 
 ## 🚀 Quick Start
 
@@ -58,128 +65,45 @@ make build
 make test
 ```
 
-### Deployment
+## Contract interface
 
-```bash
-# Deploy to testnet
-soroban contract deploy \
-  --wasm target/wasm32-unknown-unknown/release/payment_gateway.wasm \
-  --source ACCOUNT_SECRET_KEY \
-  --rpc-url https://soroban-testnet.stellar.org \
-  --network-passphrase "Test SDF Network ; September 2015"
-```
-
-### Initialize Contract
-
-```bash
-soroban contract invoke \
-  --id CONTRACT_ID \
-  --source ACCOUNT_SECRET_KEY \
-  --rpc-url https://soroban-testnet.stellar.org \
-  --network-passphrase "Test SDF Network ; September 2015" \
-  -- initialize \
-  --admin ADMIN_ADDRESS \
-  --platform_fee 250
-```
-
-## 📖 Usage
-
-### Process a Payment
-
-```rust
-// Customer makes a payment
-payment_gateway::process_payment(
-    &env,
-    &customer,
-    &merchant_id,
-    &token_address,
-    &amount,
-    &order_id,
-);
-```
-
-### Create Escrow Transaction
-
-```rust
-// Hold payment in escrow
-payment_gateway::create_escrow(
-    &env,
-    &buyer,
-    &seller,
-    &token_address,
-    &amount,
-    &order_id,
-    &release_time,
-);
-```
-
-### Release Escrow
-
-```rust
-// Release funds to seller
-payment_gateway::release_escrow(
-    &env,
-    &escrow_id,
-);
-```
+| Method | Behavior |
+|---|---|
+| `initialize(admin, platform_fee)` | Set the admin and initial fee once |
+| `register_merchant(id, address, name)` | Add a merchant; admin authorization required |
+| `process_payment(payer, merchant_id, token, amount, order_id)` | Transfer payment and fee directly from payer; payer authorization required |
+| `create_escrow(buyer, seller, token, amount, order_id, release_time)` | Transfer tokens into contract custody; buyer authorization required |
+| `release_escrow(id)` | Buyer may release before the deadline; after it, anyone may trigger release |
+| `refund_escrow(id)` | Seller may refund an active escrow to its buyer |
+| `get_payment(id)`, `get_escrow(id)`, `get_merchant(id)` | Read stored records |
+| `update_platform_fee(new_fee)` | Change fee; admin authorization required |
+| `get_platform_fee()` | Read the current fee in basis points |
 
 ## 🧪 Testing
 
 ```bash
-# Run all tests
-cargo test
-
-# Run specific test
-cargo test test_payment_processing
-
-# Run with output
-cargo test -- --nocapture
-
-# Generate coverage report
-cargo tarpaulin --out Html
+make check
 ```
+
+`make check` runs formatting, Clippy, and workspace tests. Tests use a local Soroban environment and a test token contract; they do not require a funded account or network access.
 
 ## 📁 Project Structure
 
 ```
 soroban-payment-gateway/
-├── contracts/
-│   └── payment_gateway/
-│       ├── src/
-│       │   ├── lib.rs           # Main contract logic
-│       │   ├── payment.rs       # Payment processing
-│       │   ├── escrow.rs        # Escrow management
-│       │   ├── merchant.rs      # Merchant registry
-│       │   ├── fee.rs           # Fee calculation
-│       │   └── storage.rs       # Data structures
-│       ├── Cargo.toml
-│       └── tests/
-├── sdk/
-│   ├── typescript/              # TypeScript SDK
-│   └── rust/                    # Rust SDK
-├── docs/
-│   ├── API.md                   # API documentation
-│   ├── SECURITY.md              # Security considerations
-│   └── DEPLOYMENT.md            # Deployment guide
-├── scripts/
-│   ├── deploy.sh
-│   └── test-integration.sh
+├── contracts/payment_gateway/src/
+│   ├── lib.rs                   # Contract entry points and fee calculation
+│   ├── payment.rs               # Payment record types
+│   ├── escrow.rs                # Escrow record types
+│   ├── merchant.rs              # Merchant record type
+│   ├── storage.rs               # Typed storage keys and accessors
+│   └── test.rs                  # Soroban contract behavior tests
 ├── Makefile
 ├── Cargo.toml
+├── Cargo.lock
+├── .github/workflows/ci.yml
 └── README.md
 ```
-
-## 🔒 Security
-
-This contract implements several security measures:
-
-- **Reentrancy Protection**: Guards against reentrancy attacks
-- **Access Control**: Role-based permissions
-- **Input Validation**: Comprehensive parameter validation
-- **Safe Math**: Overflow protection on all calculations
-- **Audit Trail**: Complete event logging
-
-**⚠️ Security Notice**: This contract has not been audited. Use at your own risk in production environments.
 
 ## 🤝 Contributing
 
@@ -213,16 +137,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🔗 Links
 
-- [Documentation](https://docs.nexastellar.dev/payment-gateway)
 - [Soroban Docs](https://soroban.stellar.org/docs)
 - [Stellar Network](https://stellar.org)
 - [Report Issues](https://github.com/NexaStellar/soroban-payment-gateway/issues)
-
-## 💬 Community
-
-- [Discord](https://discord.gg/nexastellar)
-- [Twitter](https://twitter.com/nexastellar)
-- [Telegram](https://t.me/nexastellar)
 
 ## 🙏 Acknowledgments
 
