@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Developer documentation for the NexaStellar Soroban Payment Gateway prototype.">
+  <title>Soroban Payment Gateway — Documentation</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <p class="eyebrow">NexaStellar · Developer documentation</p>
+    <h1>Soroban Payment Gateway</h1>
+    <p>A guide to the contract’s payment, fee, merchant, and escrow interfaces, including authorization rules, local testing, and current limitations.</p>
+    <div class="badges"><span class="badge">Rust · Soroban SDK 21</span><span class="badge">Alpha prototype</span><span class="badge">MIT</span></div>
+  </header>
+  <div class="layout">
+    <nav aria-label="On this page">
+      <strong>On this page</strong>
+      <a href="#status">Status &amp; safety</a><a href="#overview">How it works</a><a href="#setup">Set up</a>
+      <a href="#interface">Contract interface</a><a href="#flows">Payment &amp; escrow flows</a><a href="#auth">Authorization &amp; fees</a>
+      <a href="#events">Storage &amp; events</a><a href="#testing">Testing</a><a href="#contributing">Contributing</a>
+    </nav>
+    <main>
+      <section id="status">
+        <h2>Status and safety</h2>
+        <div class="callout warning"><strong>Unaudited alpha; do not use with real funds.</strong> The code and storage model may change. The contract has no dispute-resolution mechanism, and an administrator may set the platform fee as high as 100%.</div>
+        <p>This repository is a small Soroban contract prototype. It implements direct token payments, an admin-managed merchant registry, platform-fee transfers, and buyer-funded escrow. It does not currently implement subscriptions, merchant update/deactivation endpoints, dispute resolution, or an on-chain refund-request process.</p>
+        <p>Only tokens exposed through a compatible Soroban token contract are supported. This is not a general-purpose bridge for arbitrary Stellar assets. Tests run in Soroban’s local test environment; this guide does not claim that a deployed contract exists.</p>
+      </section>
+      <section id="overview">
+        <h2>How it works</h2>
+        <div class="cards">
+          <div class="card"><strong>Admin</strong>Initializes the contract, registers merchants, and updates the platform fee.</div>
+          <div class="card"><strong>Payer / buyer</strong>Authorizes a payment or funds a new escrow from their token balance.</div>
+          <div class="card"><strong>Merchant / seller</strong>Receives completed payment proceeds or released escrow funds.</div>
+        </div>
+        <p>Payment processing transfers the merchant’s share and fee directly from the payer. Escrow creation transfers funds into contract custody; a later release transfers them to the seller, while a seller-authorized refund returns them to the buyer.</p>
+      </section>
+      <section id="setup">
+        <h2>Development setup</h2>
+        <h3>Prerequisites</h3>
+        <ul><li>Rust stable and Cargo.</li><li>The <code>wasm32-unknown-unknown</code> target for a Wasm build.</li></ul>
+        <pre><code>git clone https://github.com/NexaStellar/soroban-payment-gateway.git
+cd soroban-payment-gateway
+rustup target add wasm32-unknown-unknown
+make check
+make build</code></pre>
+        <p><code>make check</code> runs formatting validation, Clippy with warnings denied, and workspace tests. <code>make build</code> compiles a release Wasm artifact at <code>target/wasm32-unknown-unknown/release/payment_gateway.wasm</code>.</p>
+        <p>To see test output, run <code>make test-verbose</code>. No funded account or network access is needed for the contract tests.</p>
+      </section>
+      <section id="interface">
+        <h2>Contract interface</h2>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Method</th><th>Purpose</th><th>Authorization</th></tr></thead>
+          <tbody>
+            <tr><td><code>initialize(admin, platform_fee)</code></td><td>Set the admin and initial fee once; fee is basis points (10,000 = 100%).</td><td>Admin address</td></tr>
+            <tr><td><code>register_merchant(merchant_id, merchant_address, merchant_name)</code></td><td>Add a unique merchant ID with an active status and zeroed statistics.</td><td>Current admin</td></tr>
+            <tr><td><code>process_payment(payer, merchant_id, token, amount, order_id)</code></td><td>Transfer token amounts, record the payment, update merchant volume/count, emit an event; returns a payment ID.</td><td>Payer</td></tr>
+            <tr><td><code>create_escrow(buyer, seller, token, amount, order_id, release_time)</code></td><td>Move tokens into contract custody and create an active escrow; returns an escrow ID.</td><td>Buyer</td></tr>
+            <tr><td><code>release_escrow(escrow_id)</code></td><td>Release active escrow funds to the seller.</td><td>Buyer before deadline; permissionless at/after deadline</td></tr>
+            <tr><td><code>refund_escrow(escrow_id)</code></td><td>Return active escrow funds to the buyer.</td><td>Seller</td></tr>
+            <tr><td><code>get_payment(id)</code>, <code>get_escrow(id)</code>, <code>get_merchant(id)</code></td><td>Read stored records as optional values.</td><td>None</td></tr>
+            <tr><td><code>update_platform_fee(new_fee)</code>, <code>get_platform_fee()</code></td><td>Update (maximum 10,000) or read the current fee in basis points.</td><td>Admin for update; none for read</td></tr>
+          </tbody>
+        </table></div>
+        <p>Amounts use the token contract’s smallest unit and are represented as signed 128-bit integers. Payment and escrow methods reject non-positive amounts. Escrow also requires a release timestamp later than the current ledger timestamp.</p>
+      </section>
+      <section id="flows">
+        <h2>Payment and escrow flows</h2>
+        <h3>Direct payment</h3>
+        <ol><li>Initialize the contract; the admin authorizes the operation.</li><li>Register the merchant using an unused ID.</li><li>Call <code>process_payment</code> with the payer, merchant ID, token contract address, positive amount, and order ID.</li><li>The payer authorizes token transfers. The contract pays the merchant amount and, when nonzero, the fee to the admin, then stores a completed payment record.</li></ol>
+        <h3>Escrow</h3>
+        <ol><li>The buyer calls <code>create_escrow</code>, authorizing a positive token transfer to the contract and choosing a future release time.</li><li>Before that time, the buyer can authorize <code>release_escrow</code>; the seller can instead authorize <code>refund_escrow</code>.</li><li>At or after the release time, any caller can trigger release to the seller.</li><li>Released or refunded escrows are no longer active; repeated terminal actions fail.</li></ol>
+        <div class="callout">There is no neutral arbitrator, dispute state transition, or buyer-initiated refund operation in the current public interface. Do not treat escrow as protected against disputes.</div>
+      </section>
+      <section id="auth">
+        <h2>Authorization and fee behavior</h2>
+        <ul><li>Initialization can only happen once. The supplied admin must authorize it.</li><li>Merchant registration and fee updates require the stored admin.</li><li>Payments require payer authorization; escrow creation requires buyer authorization.</li><li>Early escrow release requires buyer authorization; timed release is permissionless. Refund requires seller authorization.</li><li>Fee basis points are capped at 10,000. For a payment amount <code>A</code>, the fee is integer-rounded down from <code>A × fee_bps / 10,000</code>; the merchant receives <code>A - fee</code>.</li></ul>
+        <p>The admin is the fee recipient. Review the current fee and contract code before interacting. This is a prototype, not a vetted payment processor.</p>
+      </section>
+      <section id="events">
+        <h2>Storage and events</h2>
+        <p>The contract stores the admin, current platform fee, sequential payment and escrow IDs, merchant records, payment records, and escrow records. Merchant statistics track total volume and transaction count for successful payment calls.</p>
+        <p>Lifecycle events currently include <code>initialized</code>, <code>merchant_registered</code>, <code>payment_processed</code>, <code>escrow_created</code>, <code>escrow_released</code>, <code>escrow_refunded</code>, and <code>fee_updated</code>. Inspect emitted event values and the record getters for the authoritative data model.</p>
+        <h3>Source layout</h3>
+        <ul><li><code>contracts/payment_gateway/src/lib.rs</code> — contract methods and fee calculation.</li><li><code>payment.rs</code>, <code>escrow.rs</code>, <code>merchant.rs</code> — persisted record types and statuses.</li><li><code>storage.rs</code> — typed storage keys and accessors.</li><li><code>test.rs</code> — local contract behavior tests.</li></ul>
+      </section>
+      <section id="testing">
+        <h2>Testing and quality checks</h2>
+        <pre><code>make test       # workspace tests
+make test-verbose
+make fmt-check  # formatting without modifying files
+make lint       # Clippy; warnings are errors
+make check      # fmt-check + lint + test</code></pre>
+        <p>When changing contract behavior, add or update tests for authorization, rejected inputs, record status, transfers, and emitted events where relevant. Tests use Soroban’s in-process environment and a test token contract.</p>
+      </section>
+      <section id="contributing">
+        <h2>Contributing</h2>
+        <p>Read the repository’s <a href="../CONTRIBUTING.md">contribution guide</a>, open an issue for significant changes, and include focused tests. Run <code>make check</code> before submitting a pull request. Never include secret keys or funded account credentials in source, logs, or issues.</p>
+        <p>For issues and changes, see <a href="https://github.com/NexaStellar/soroban-payment-gateway/issues">GitHub Issues</a> and the <a href="https://github.com/NexaStellar/soroban-payment-gateway">source repository</a>.</p>
+      </section>
+    </main>
+  </div>
+  <footer>Documentation for the current alpha source. Verify behavior against the contract and tests before relying on it. <a href="../README.md">Repository README</a>.</footer>
+</body>
+</html>

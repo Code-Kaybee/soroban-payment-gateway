@@ -137,9 +137,12 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🔗 Links
 
+- [Developer documentation](https://nexastellar.github.io/soroban-payment-gateway/)
 - [Soroban Docs](https://soroban.stellar.org/docs)
 - [Stellar Network](https://stellar.org)
 - [Report Issues](https://github.com/NexaStellar/soroban-payment-gateway/issues)
+
+The documentation site is maintained in [`docs/`](docs/). GitHub Pages must be enabled with **GitHub Actions** as the build and deployment source.
 
 ## 🙏 Acknowledgments
 
