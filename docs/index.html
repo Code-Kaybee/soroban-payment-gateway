@@ -7,9 +7,10 @@
   <title>Soroban Payment Gateway — Documentation</title>
   <link rel="stylesheet" href="styles.css">
 </head>
-<body>
+<body class="gateway-docs">
+  <a class="skip-link" href="#main-content">Skip to documentation</a>
   <header>
-    <p class="eyebrow">NexaStellar · Developer documentation</p>
+    <p class="eyebrow">NexaStellar / Contract engineering</p>
     <h1>Soroban Payment Gateway</h1>
     <p>A guide to the contract’s payment, fee, merchant, and escrow interfaces, including authorization rules, local testing, and current limitations.</p>
     <div class="badges"><span class="badge">Rust · Soroban SDK 21</span><span class="badge">Alpha prototype</span><span class="badge">MIT</span></div>
@@ -21,7 +22,7 @@
       <a href="#interface">Contract interface</a><a href="#flows">Payment &amp; escrow flows</a><a href="#auth">Authorization &amp; fees</a>
       <a href="#events">Storage &amp; events</a><a href="#testing">Testing</a><a href="#contributing">Contributing</a>
     </nav>
-    <main>
+    <main id="main-content">
       <section id="status">
         <h2>Status and safety</h2>
         <div class="callout warning"><strong>Unaudited alpha; do not use with real funds.</strong> The code and storage model may change. The contract has no dispute-resolution mechanism, and an administrator may set the platform fee as high as 100%.</div>
