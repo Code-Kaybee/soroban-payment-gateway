@@ -12,7 +12,7 @@ fn setup() -> (Env, Address, Address, Address) {
     let token_address = env
         .register_stellar_asset_contract_v2(admin.clone())
         .address();
-    let contract_id = env.register_contract(None, PaymentGateway);
+    let contract_id = env.register(PaymentGateway, ());
     PaymentGatewayClient::new(&env, &contract_id).initialize(&admin, &250);
 
     (env, contract_id, admin, token_address)
@@ -45,7 +45,7 @@ fn rejects_platform_fee_above_100_percent() {
     let env = Env::default();
     env.mock_all_auths();
     let admin = Address::generate(&env);
-    let contract_id = env.register_contract(None, PaymentGateway);
+    let contract_id = env.register(PaymentGateway, ());
     let client = PaymentGatewayClient::new(&env, &contract_id);
 
     client.initialize(&admin, &10_001);
@@ -195,7 +195,7 @@ fn non_admin_cannot_initialize() {
     let env = Env::default();
     let admin = Address::generate(&env);
     let non_admin = Address::generate(&env);
-    let contract_id = env.register_contract(None, PaymentGateway);
+    let contract_id = env.register(PaymentGateway, ());
     let client = PaymentGatewayClient::new(&env, &contract_id);
 
     // Call without admin authorization fails
